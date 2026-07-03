@@ -174,17 +174,129 @@ by Means of Discrete Summation Formulas.* Stanford CCRMA (STAN-M-5).
 
 ## 🧪 The DSF starter kit
 
-Built the study above into a real module: `native_modules/dsf_oscillator`.
-Native C++/WASM with a JS fallback, wired into both the offline evaluator
-and the realtime audio worklet, same as Surge Oscillator.
+`native_modules/dsf_oscillator` — Native C++/WASM with a JS fallback,
+wired into both the offline evaluator and the realtime audio worklet,
+same as Surge Oscillator. This got rewritten several times before
+landing here (that history is preserved further down, past the license,
+for anyone who wants the debugging trail); this section explains the
+oscillator as it actually works today.
 
-**⚠️ This module went through two genuinely different closed-form
-equations, not just bug fixes to one.** The honest version of events, in
-order, is below — three real fixes to the first equation, then a live
-report that turned out to mean the first equation itself was wrong at a
-foundational level, which led to a full rewrite on a second, verified
-equation. Read it in order; it's the actual debugging history, not a
-cleaned-up summary.
+### The core idea: one formula, one control, one accumulator
+
+Everything in this module comes from a single closed form, transcribed
+directly from `pureSawEng` in Walter H. Hackett's "Extended DSF
+Oscillators.cxx":
+
+```
+pureSawEng(t, N) = sin(π·t·(2N + 1)) / sin(π·t)  −  1
+```
+
+`t` is phase in `[0, 1)`; `N` is a harmonic count. This is **not**
+evaluated directly as the output waveform. It's run through a leaky
+integrator — the same accumulator pattern used throughout this family of
+oscillators (`DSFOscillatorBase::run()` in the original header does the
+same thing):
+
+```
+value = value · retention  +  pureSawEng(t, N) · dt
+```
+
+where `dt = frequency / sampleRate` and `retention` decays the
+accumulator's memory across roughly 20 periods of the current pitch (not
+a fixed sample count — a fixed retention forgets mid-ramp at low
+frequencies and distorts the shape; see the history below for how that
+was found). Treat `pureSawEng` as a *rate of change*, and the accumulator
+as the thing that turns that rate into an actual waveform, the way
+integrating a square wave produces a triangle wave.
+
+`N` is always capped at `⌊Nyquist / frequency⌋` — the most harmonics
+that can fit under the sample rate for the current pitch. That's what
+makes every waveform in this module alias-free *by construction*: it is
+structurally impossible to ask for more harmonics than fit.
+
+**Harmonics (0–1)** is the one knob that shapes every waveform's
+character. It crossfades `N` continuously from 1 up to that Nyquist-safe
+maximum, blending between the two nearest integer harmonic counts so the
+sweep is smooth rather than stepped. It currently displays as a raw
+`0.000`–`1.000` fraction rather than a literal harmonic-count number.
+
+### Every waveform is a variation on that one accumulator
+
+- **Sine** — `sin(2π·t)` directly. No DSF math, no accumulator; the true
+  floor of the instrument.
+- **Saw** — `pureSawEng`, Harmonics-morphed, run through the accumulator
+  above. This is the one real reference formula everything else is built
+  from.
+- **Square (PWM)** — `saw(t) − saw(t − pulseWidth)`. Subtracting a
+  phase-shifted copy of the already-correct Saw is itself alias-free —
+  no new formula, no new singularity to worry about — and `pulseWidth`
+  (0–1) sets duty cycle the way PWM does on any analog square. Its
+  higher harmonics keep its peak swing roughly constant as duty cycle
+  narrows.
+- **Trimorph** *(was called Triangle)* — a **second** leaky integration
+  on top of Square's output. Integrating a square produces a triangle;
+  integrating it a second time here is literally what turns Square's
+  edges into Trimorph's ramps. Because this stage mostly tracks Square's
+  *fundamental* harmonic, and a PWM pulse train's fundamental amplitude
+  genuinely scales with `sin(π·dutyCycle)`, Trimorph is compensated by
+  dividing by that same factor before its own peak-follower normalizer —
+  otherwise it fades to silence as `pulseWidth` approaches 0 or 1.
+- **SquSaw** *(was called TriMorph)* — a plain crossfade between Saw and
+  a *fixed* 50%-duty Square (deliberately not tied to the `pulseWidth`
+  knob), landing on a saw-to-triangle-like character rather than a
+  saw-to-square one. One knob, `blend` (0–1): 0 is pure Saw, 1 is pure
+  50%-duty Square.
+
+### Getting the four classic waveshapes
+
+| Shape | Waveform | Harmonics | PWM / Blend |
+|---|---|---|---|
+| **Sine** | `Sine` (or any other waveform with Harmonics = 0) | — | — |
+| **Sawtooth** | `Saw` | `1.0` | — |
+| **Square** | `Square (PWM)` | `1.0` | `pulseWidth = 0.5` |
+| **Triangle** | `Trimorph` | `1.0` | `pulseWidth = 0.5` |
+
+`SquSaw` is the bonus fifth shape this technique makes easy — a
+continuous morph *between* two of the classics, not one of them.
+
+### Why reducing everything to a sine is the interesting part
+
+Every non-Sine waveform in this module collapses to an **exact sine**
+at `Harmonics = 0` — not an approximation, not a "close enough" sine,
+the literal same single-harmonic closed form regardless of which
+waveform you started from. That's a direct, audible consequence of the
+architecture: every waveform shares the same underlying `pureSawEng`
+harmonic machinery, just fed through a different post-processing stage
+(a subtraction for Square, a second integration for Trimorph, a
+crossfade for SquSaw) — so winding Harmonics down doesn't cross-fade to
+some *other* fixed sine, it un-builds the exact same harmonic sum every
+other waveform is made of, one harmonic at a time, down to the single
+fundamental they all share.
+
+That's what makes sweeping Harmonics on this oscillator sound organic
+rather than mechanical: a classic wavetable morph crossfades between two
+*independently-drawn* shapes, so the midpoint is a blend of two unrelated
+timbres. Here, every point along the Harmonics knob is the *same*
+waveform with fewer or more harmonics — brightness and body come from
+literally adding or removing overtones from one continuous structure,
+the way a real acoustic instrument's harmonic content actually changes
+with dynamics or technique, not the way a synthesizer cross-fader does.
+Combine that with Square's PWM, Trimorph's triangle-ness, or SquSaw's
+Saw/Square blend, and Harmonics becomes a second axis of movement layered
+on top — which is where this stops being "four classic waveshapes" and
+starts being a genuinely novel timbral space: PWM-narrow squares thinning
+down toward a sine at low Harmonics, Trimorph ramps softening into a pure
+tone, SquSaw hybrids that are neither saw nor square nor triangle at any
+single setting. None of that palette exists in a standard "pick a
+waveform, cross-fade to the next" oscillator.
+
+<details>
+<summary>Development history (10 rounds of live debugging — click to expand)</summary>
+
+This module went through several genuinely different closed-form
+equations and real, reproducible bugs before landing on the design
+above. Kept here for anyone who wants the debugging trail rather than
+just the destination.
 
 ### Round 1: the geometric-decay equation (Moorer's classic DSF)
 
@@ -615,6 +727,8 @@ Renamed once more per direct request: the waveform previously called
 **Triangle** is now **Trimorph**, and the waveform previously called
 **TriMorph** is now **SquSaw**. Label-only change — no behavior, math, or
 parameter-key change.
+
+</details>
 
 ## License
 

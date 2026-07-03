@@ -16911,6 +16911,12 @@ def require_readme_scheduler_contract() -> None:
         "Round 10: Triangle went silent at extreme PWM",
         "sin(pi * dutyCycle)",
         "Naming, again: Triangle",
+        "The core idea: one formula, one control, one accumulator",
+        "Getting the four classic waveshapes",
+        "Why reducing everything to a sine is the interesting part",
+        "sound organic rather than mechanical",
+        "novel timbral space",
+        "Development history (10 rounds of live debugging",
     ]:
         require(snippet in readme_text, f"README scheduler contract missing {snippet}")
     for snippet in [
