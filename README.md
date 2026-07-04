@@ -1,11 +1,11 @@
-# soemdsp-sandbox
+# ⚔️ soemdsp-sandbox 🛡️
 
 ## Live Demo: http://soundemote.io/sandbox
 
 Browser sandbox for trying `soemdsp` patching, generated artifacts, waveform
 views, Render Sample, and Live Audio.
 
-## Aliasing wars: the Surge Oscillator
+## ⚔️💥 Aliasing wars: the Surge Oscillator 🛡️🧨
 
 This branch (`aliasing-wars`) is a dedicated workspace for anti-aliased
 oscillator work, starting with `native_modules/surge_oscillator` — a
@@ -18,13 +18,13 @@ saw/square/tri/sine oscillator with hard sync.
 > unwanted high-frequency garbage a digital oscillator sneaks in above
 > Nyquist. Same shape of fight, aliasing instead of loudness.
 
-**The problem.** Hard sync forces a slave oscillator's phase back to 0 every
+**💣 The problem.** Hard sync forces a slave oscillator's phase back to 0 every
 time a master signal crosses zero going up. That forced reset is a
-discontinuity injected mid-waveform, and rendering it naively (just snapping
-`phase = 0`, with no correction) aliases badly — the classic harsh, digital
-buzz under a sync sweep.
+discontinuity injected mid-waveform — a little 🧨 detonating mid-cycle — and
+rendering it naively (just snapping `phase = 0`, with no correction) aliases
+badly: 💥 the classic harsh, digital buzz under a sync sweep.
 
-**The fix, in two parts:**
+**⚡🔧 The fix, in two parts:**
 
 1. **PolyBLEP correction reused, not reinvented.** This sandbox's existing
    `polyblep.cpp` module already band-limits ordinary cycle wraps with a
@@ -41,7 +41,7 @@ buzz under a sync sweep.
    starts the new cycle already `frac` of the way in — the same idea Surge
    and other analog-modeling synths use for sync-aware oscillators.
 
-**Verified, not assumed.** The compiled `.wasm` is tested against a
+**🔬📡 Verified, not assumed.** The compiled `.wasm` is tested against a
 Python + `wasmtime` harness exercising the real artifact directly (27
 assertions: pool exhaustion, waveform selection, level scaling, edge-triggered
 sync detection, and — the part that actually matters — proof that early vs.
@@ -58,7 +58,7 @@ oscillator's raw signal, for inspection) out. Native C++/WASM with a JS
 fallback, wired into both the offline evaluator and the realtime audio
 worklet.
 
-**Built-in sync source.** Patching a real oscillator into `Sync` still
+**🚁🛩️ Built-in sync source.** Patching a real oscillator into `Sync` still
 works, but most hard-sync sweeps don't need a second module just to get
 one — the oscillator owns its own internal master oscillator (`Sync Freq`,
 0–20000 Hz, same range as the audible `Frequency`). With nothing patched
@@ -68,7 +68,7 @@ hard-sync sweep with two knobs and zero patch cables. Patch something into
 `Sync` and it takes over completely; the internal oscillator is a
 convenience default, not an extra mandatory step.
 
-## 🎛️ Alias-free oscillator study: the DSF technique
+## 🎛️⚡🔬 Alias-free oscillator study: the DSF technique 🧲
 
 Studied `C:\Users\argit\Documents\_PROGRAMMING\soemdsp\include\soemdsp\oscillator\DSFOscillator.hpp`
 (Walter Hackett's alias-free oscillator) as a second angle on the aliasing
@@ -110,7 +110,7 @@ something being suppressed after the fact.
 - `DSFOscillatorSineSquare` — same idea, sine → square, with its own
   coefficient derivation and partial-count halving (`/ 2.0`).
 
-### 🧮 How the equation was derived
+### 🧮⚙️ How the equation was derived 🔩
 
 <div align="center">
 <img src="docs/assets/dsf-derivation.svg" alt="Four-step derivation: an infinite geometrically-decaying harmonic sum is rewritten as a complex exponential, collapsed by the geometric series identity, and reduced to one closed-form trig equation" width="90%"/>
@@ -172,7 +172,7 @@ a real option for future work, not built in this pass.
 📚 **Source:** Moorer, J. A. (1976). *The Synthesis of Complex Audio Spectra
 by Means of Discrete Summation Formulas.* Stanford CCRMA (STAN-M-5).
 
-## 🧪 The DSF starter kit
+## 🧪🔋 The DSF starter kit ⚡🚀
 
 `native_modules/dsf_oscillator` — Native C++/WASM with a JS fallback,
 wired into both the offline evaluator and the realtime audio worklet,
@@ -181,7 +181,7 @@ landing here (that history is preserved further down, past the license,
 for anyone who wants the debugging trail); this section explains the
 oscillator as it actually works today.
 
-### The core idea: one formula, one control, one accumulator
+### ⚙️🔋 The core idea: one formula, one control, one accumulator
 
 Everything in this module comes from a single closed form, transcribed
 directly from `pureSawEng` in Walter H. Hackett's "Extended DSF
@@ -220,7 +220,7 @@ maximum, blending between the two nearest integer harmonic counts so the
 sweep is smooth rather than stepped. It currently displays as a raw
 `0.000`–`1.000` fraction rather than a literal harmonic-count number.
 
-### Every waveform is a variation on that one accumulator
+### 🛠️⚡ Every waveform is a variation on that one accumulator
 
 - **Sine** — `sin(2π·t)` directly. No DSF math, no accumulator; the true
   floor of the instrument.
@@ -247,7 +247,7 @@ sweep is smooth rather than stepped. It currently displays as a raw
   saw-to-square one. One knob, `blend` (0–1): 0 is pure Saw, 1 is pure
   50%-duty Square.
 
-### Getting the four classic waveshapes
+### 🎯🪖 Getting the four classic waveshapes
 
 | Shape | Waveform | Harmonics | PWM / Blend |
 |---|---|---|---|
@@ -259,7 +259,7 @@ sweep is smooth rather than stepped. It currently displays as a raw
 `SquSaw` is the bonus fifth shape this technique makes easy — a
 continuous morph *between* two of the classics, not one of them.
 
-### Why reducing everything to a sine is the interesting part
+### 🌊⚡🔬 Why reducing everything to a sine is the interesting part
 
 Every non-Sine waveform in this module collapses to an **exact sine**
 at `Harmonics = 0` — not an approximation, not a "close enough" sine,
