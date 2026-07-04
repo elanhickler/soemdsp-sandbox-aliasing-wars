@@ -246,6 +246,11 @@ sweep is smooth rather than stepped. It currently displays as a raw
   knob), landing on a saw-to-triangle-like character rather than a
   saw-to-square one. One knob, `blend` (0–1): 0 is pure Saw, 1 is pure
   50%-duty Square.
+- **Quasi Saw / Quasi Square** — the one exception to "everything above
+  is a variation on the same accumulator." A different closed form
+  entirely (see the [Bonus waveshapes](#bonus-waveshapes-quasi-saw--quasi-square)
+  section below), evaluated directly per-sample with no integrator at
+  all. Same Harmonics knob, same Nyquist ceiling, different math.
 
 ### 🎯🪖 Getting the four classic waveshapes
 
@@ -261,16 +266,20 @@ continuous morph *between* two of the classics, not one of them.
 
 ### 🌊⚡🔬 Why reducing everything to a sine is the interesting part
 
-Every non-Sine waveform in this module collapses to an **exact sine**
-at `Harmonics = 0` — not an approximation, not a "close enough" sine,
-the literal same single-harmonic closed form regardless of which
-waveform you started from. That's a direct, audible consequence of the
-architecture: every waveform shares the same underlying `pureSawEng`
-harmonic machinery, just fed through a different post-processing stage
-(a subtraction for Square, a second integration for Trimorph, a
-crossfade for SquSaw) — so winding Harmonics down doesn't cross-fade to
-some *other* fixed sine, it un-builds the exact same harmonic sum every
-other waveform is made of, one harmonic at a time, down to the single
+Every `pureSawEng`-family waveform in this module — Saw, Square, Trimorph,
+SquSaw — collapses to an **exact sine** at `Harmonics = 0`, not an
+approximation, not a "close enough" sine, the literal same
+single-harmonic closed form regardless of which waveform you started
+from. (Quasi Saw/Square are the one exception: a different closed form
+entirely, so their `Harmonics = 0` case is its own single-cycle shape,
+not a sine — see the Bonus waveshapes section.) For the `pureSawEng`
+family, this is a direct, audible consequence of the architecture: every
+one of those waveforms shares the same underlying `pureSawEng` harmonic
+machinery, just fed through a different post-processing stage (a
+subtraction for Square, a second integration for Trimorph, a crossfade
+for SquSaw) — so winding Harmonics down doesn't cross-fade to some
+*other* fixed sine, it un-builds the exact same harmonic sum every other
+waveform is made of, one harmonic at a time, down to the single
 fundamental they all share.
 
 That's what makes sweeping Harmonics on this oscillator sound organic
