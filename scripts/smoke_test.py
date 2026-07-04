@@ -205,6 +205,7 @@ PUBLIC_SCRIPT_PATHS = (
     "./public/node-graph-pitch-quantizer.js",
     "./public/node-graph-surge-oscillator.js",
     "./public/node-graph-dsf-oscillator.js",
+    "./public/node-graph-tube-oscillator.js",
     "./public/node-graph-live-frame-evaluator.js",
     "./public/node-graph-live-runtime.js",
     "./public/node-graph-wire-controller-bootstrap.js",
@@ -16872,6 +16873,11 @@ def require_readme_scheduler_contract() -> None:
         "novel timbral space",
         "Trimorph",
         "SquSaw",
+        "The Tube Oscillator: alias-",
+        "DistortionOscillator.hpp",
+        "quarterNyquist / (log10(frequency) * frequency)",
+        "Perfect Saw",
+        "Walter Wave",
     ]:
         require(snippet in readme_text, f"README scheduler contract missing {snippet}")
     for snippet in [
@@ -17158,6 +17164,11 @@ def require_native_module_contract(base_url: str) -> None:
             "soemdsp_dsf_oscillator_create",
             "soemdsp_dsf_oscillator_destroy",
             "soemdsp_dsf_oscillator_sample",
+        ],
+        "tube_oscillator": [
+            "soemdsp_tube_oscillator_create",
+            "soemdsp_tube_oscillator_destroy",
+            "soemdsp_tube_oscillator_sample",
         ],
         "pll": ["soemdsp_pll_create", "soemdsp_pll_destroy", "soemdsp_pll_process"],
         "polyblep": [

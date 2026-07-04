@@ -200,6 +200,17 @@
       "wasmAvailable": true
     },
     {
+      "name": "tube_oscillator",
+      "label": "Tube Oscillator",
+      "targetType": "tubeOscillator",
+      "kind": "oscillator",
+      "source": "native_modules/tube_oscillator/tube_oscillator.cpp",
+      "sourceUrl": "https://github.com/soundemote/soemdsp-sandbox/blob/master/native_modules/tube_oscillator/tube_oscillator.cpp",
+      "wasm": "native_modules/tube_oscillator/tube_oscillator.wasm",
+      "wasmUrl": "native_modules/tube_oscillator/tube_oscillator.wasm",
+      "wasmAvailable": true
+    },
+    {
       "name": "vactrol_envelope",
       "label": "Vactrol Envelope",
       "targetType": "vactrolEnvelope",

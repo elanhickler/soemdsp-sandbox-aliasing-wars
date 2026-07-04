@@ -168,6 +168,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     this.pitchQuantizerStates = new Map();
     this.surgeOscillatorStates = new Map();
     this.dsfOscillatorStates = new Map();
+    this.tubeOscillatorStates = new Map();
     this.noiseGeneratorStates = new Map();
     this.oscResetStates = new Map();
     this.graphLfoStates = new Map();
@@ -674,6 +675,22 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         });
         return;
       }
+      if (name === "tube_oscillator" || targetType === "tubeOscillator") {
+        for (const state of this.tubeOscillatorStates.values()) {
+          this.destroyTubeOscillatorNativeState(state);
+        }
+        this.nativeTubeOscillator = exports;
+        this.nativeTubeOscillatorReady = Boolean(
+          this.nativeTubeOscillator?.soemdsp_tube_oscillator_create &&
+          this.nativeTubeOscillator?.soemdsp_tube_oscillator_sample,
+        );
+        this.port.postMessage({
+          type: "nativeModuleStatus",
+          name: "tube_oscillator",
+          status: this.nativeTubeOscillatorReady ? "ready" : "missing exports",
+        });
+        return;
+      }
       if (name === "shooting_star_explosion" || targetType === "shootingStarExplosion") {
         this.nativeShootingStarExplosion = exports;
         this.nativeShootingStarExplosionReady = Boolean(
@@ -790,6 +807,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     this.pitchQuantizerStates = new Map();
     this.surgeOscillatorStates = new Map();
     this.dsfOscillatorStates = new Map();
+    this.tubeOscillatorStates = new Map();
     this.noiseGeneratorStates = new Map();
     this.oscResetStates = new Map();
     this.graphLfoStates = new Map();
@@ -1039,6 +1057,9 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       if (node?.type === "dsfOscillator" && !this.dsfOscillatorStates.has(id)) {
         this.dsfOscillatorStates.set(id, this.createDsfOscillatorState());
       }
+      if (node?.type === "tubeOscillator" && !this.tubeOscillatorStates.has(id)) {
+        this.tubeOscillatorStates.set(id, this.createTubeOscillatorState());
+      }
       if (node?.type === "passiveFilter" && !this.passiveFilterStates.has(id)) {
         this.passiveFilterStates.set(id, this.createPassiveFilterState());
       }
@@ -1246,6 +1267,12 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       if (!ids.has(id)) {
         this.destroyDsfOscillatorNativeState(this.dsfOscillatorStates.get(id));
         this.dsfOscillatorStates.delete(id);
+      }
+    }
+    for (const id of [...this.tubeOscillatorStates.keys()]) {
+      if (!ids.has(id)) {
+        this.destroyTubeOscillatorNativeState(this.tubeOscillatorStates.get(id));
+        this.tubeOscillatorStates.delete(id);
       }
     }
     for (const id of [...this.passiveFilterStates.keys()]) {
@@ -3716,6 +3743,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     runtime.pitchQuantizerStates = new Map();
     runtime.surgeOscillatorStates = new Map();
     runtime.dsfOscillatorStates = new Map();
+    runtime.tubeOscillatorStates = new Map();
     runtime.stepSequencerStates = new Map();
     runtime.triggerCounterStates = new Map();
     runtime.triggerDividerStates = new Map();
@@ -3766,6 +3794,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       if (node?.type === "pitchQuantizer") this.pitchQuantizerStates.set(id, this.createPitchQuantizerState());
       if (node?.type === "surgeOscillator") this.surgeOscillatorStates.set(id, this.createSurgeOscillatorState());
       if (node?.type === "dsfOscillator") this.dsfOscillatorStates.set(id, this.createDsfOscillatorState());
+      if (node?.type === "tubeOscillator") this.tubeOscillatorStates.set(id, this.createTubeOscillatorState());
       if (node?.type === "passiveFilter") this.passiveFilterStates.set(id, this.createPassiveFilterState());
       if (node?.type === "cookbookFilter") this.cookbookFilterStates.set(id, this.createCookbookFilterState());
       if (node?.type === "ladderFilter") this.ladderFilterStates.set(id, this.createLadderFilterState());
@@ -6536,6 +6565,157 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     return this.dsfOscillatorSampleJs(state, options);
   }
 
+  createTubeOscillatorState() {
+    return { phase: 0, nativeHandle: 0 };
+  }
+
+  destroyTubeOscillatorNativeState(state) {
+    if (state?.nativeHandle && this.nativeTubeOscillator?.soemdsp_tube_oscillator_destroy) {
+      this.nativeTubeOscillator.soemdsp_tube_oscillator_destroy(state.nativeHandle);
+      state.nativeHandle = 0;
+    }
+  }
+
+  tubeParabolSine(x) {
+    let xin = x;
+    if (x > 0.5) xin = x - 0.5;
+    xin = xin * 4 - 1;
+    const a = xin * xin;
+    if (x > 0.5) return -(1 - a) * (1 - a * 0.202);
+    return (1 - a) * (1 - a * 0.202);
+  }
+
+  tubeFreqToPitch(freq) {
+    return 12 * Math.log2(freq / 440) + 69;
+  }
+
+  // A completely different anti-aliasing technique from the DSF starter
+  // kit: a plain sine/parabolic phase run through a tanh saturation
+  // stage (the same soft-clip curve a vacuum tube produces), with the
+  // saturation amount throttled down as pitch rises so the harmonics it
+  // injects stay controlled near Nyquist. Faithful transcription of
+  // DistortionOscillator.hpp's ten Waveshape variants.
+  tubeOscillatorSampleJs(state, options = {}) {
+    const sampleRate = Number(options.sampleRate) > 1 ? Number(options.sampleRate) : 48000;
+    const safeFrequency = Number(options.frequencyHz) > 1 ? Number(options.frequencyHz) : 1;
+    const dt = this.clampValue((Number(options.frequencyHz) || 0) / sampleRate, -0.5, 0.5);
+    state.phase = this.wrapValue(state.phase + dt, 0, 1);
+    const t = state.phase;
+
+    const waveform = Math.round(Number(options.waveform) || 0);
+    const level = Number(options.level) || 0;
+
+    const quarterFreq = sampleRate * 0.25;
+    const sineAmp = quarterFreq / (Math.log10(safeFrequency) * safeFrequency) * (Math.PI / 2) * 0.8;
+    const m = this.clampValue(Number(options.morph) || 0, 0, 1);
+    const morphFactor = Math.pow(m, 4) * 0.999 + 0.001;
+
+    let sample;
+    switch (waveform) {
+      case 0: {
+        const toSine = (t * 2 - 1) * Math.PI;
+        sample = Math.tanh(Math.sin(toSine) * sineAmp * morphFactor) * Math.cos(toSine);
+        break;
+      }
+      case 1: {
+        const shifted = this.wrapValue(t + 0.25, 0, 1);
+        sample = Math.tanh(this.tubeParabolSine(t) * sineAmp * morphFactor) * this.tubeParabolSine(shifted);
+        break;
+      }
+      case 2: {
+        const shifted = this.wrapValue(t + 0.25, 0, 1);
+        const v = this.clampValue(
+          Math.tanh(Math.sin(t * Math.PI * 2) * sineAmp * morphFactor) * Math.sin(shifted * Math.PI * 2),
+          -1, 1);
+        sample = Math.acos(v) / (Math.PI / 2) - 1;
+        break;
+      }
+      case 3: {
+        const ps = this.tubeParabolSine(t);
+        const shifted = this.wrapValue(t + 0.25, 0, 1);
+        sample = Math.tanh(ps * sineAmp * morphFactor) *
+                 (Math.tanh(ps * sineAmp * 0.5 * morphFactor) * this.tubeParabolSine(shifted) * 0.5 + 0.5);
+        break;
+      }
+      case 4: {
+        sample = Math.tanh(this.tubeParabolSine(t) * sineAmp * morphFactor);
+        break;
+      }
+      case 5: {
+        const adjustedMorphFactor = morphFactor * (1 - 0.15) + 0.15;
+        const scaling = Math.tanh((1 - this.tubeFreqToPitch(safeFrequency) / 127) * 9);
+        const v = this.clampValue(Math.sin(t * Math.PI * 2) * adjustedMorphFactor * scaling, -1, 1);
+        sample = Math.acos(v) / Math.PI * 2 - 1;
+        break;
+      }
+      case 6: {
+        const bow = this.tubeParabolSine(t);
+        sample = (Math.tanh(bow * sineAmp * morphFactor) * bow) * 2 - 1;
+        break;
+      }
+      case 7: {
+        const bow = this.tubeParabolSine(t);
+        const sq = Math.tanh(bow * sineAmp * morphFactor);
+        sample = Math.tanh(sq * bow * 2) * 2 - 1;
+        break;
+      }
+      case 8: {
+        const bow = this.tubeParabolSine(t);
+        const sq = Math.tanh(bow * sineAmp * morphFactor);
+        sample = sq * 0.5 + 0.5 - Math.tanh(sq * bow * 2);
+        break;
+      }
+      default:
+        sample = this.tubeParabolSine(t);
+        break;
+    }
+
+    if (!Number.isFinite(sample)) sample = 0;
+    const out = this.clampValue(sample, -1.5, 1.5) * level;
+    return { Out: out };
+  }
+
+  tubeOscillatorSample(state, options = {}) {
+    if (
+      this.nativeTubeOscillatorReady &&
+      this.nativeTubeOscillator?.soemdsp_tube_oscillator_create &&
+      this.nativeTubeOscillator?.soemdsp_tube_oscillator_sample
+    ) {
+      try {
+        if (!state.nativeHandle) {
+          state.nativeHandle = this.nativeTubeOscillator.soemdsp_tube_oscillator_create();
+        }
+        if (state.nativeHandle) {
+          const sampleRate = Number(options.sampleRate) > 1 ? Number(options.sampleRate) : 48000;
+          const frequencyHz = Number(options.frequencyHz) || 0;
+          const waveform = Math.round(Number(options.waveform) || 0);
+          const morph = Number(options.morph) || 0;
+          const level = Number(options.level) || 0;
+          this.nativeTubeOscillator.soemdsp_tube_oscillator_sample(
+            state.nativeHandle,
+            frequencyHz,
+            sampleRate,
+            waveform,
+            morph,
+            level,
+          );
+          return {
+            Out: Number(this.nativeTubeOscillator.soemdsp_tube_oscillator_out(state.nativeHandle)) || 0,
+          };
+        }
+      } catch (error) {
+        this.nativeTubeOscillatorReady = false;
+        this.port.postMessage({
+          type: "nativeModuleStatus",
+          name: "tube_oscillator",
+          status: "disabled",
+          message: String(error?.message || error || "native Tube Oscillator failed"),
+        });
+      }
+    }
+    return this.tubeOscillatorSampleJs(state, options);
+  }
+
   spiralWrap01(value) {
     return value - Math.floor(value);
   }
@@ -7337,6 +7517,17 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
           morph: read("morph", 1),
           pulseWidth: read("pulseWidth", 0.5),
           blend: read("blend", 0.5),
+          level: read("level", 1),
+        });
+      } else if (node?.type === "tubeOscillator") {
+        const state = this.tubeOscillatorStates.get(nodeId) || this.createTubeOscillatorState();
+        this.tubeOscillatorStates.set(nodeId, state);
+        const read = (key, fallback) => this.readEffectiveParameter(node, key, fallback, frame, frames, frameValues);
+        value = this.tubeOscillatorSample(state, {
+          frequencyHz: Math.max(0, read("frequency", 220)),
+          sampleRate: this.engineSampleRate || sampleRate,
+          waveform: read("waveform", 0),
+          morph: read("morph", 0.5),
           level: read("level", 1),
         });
       } else if (node?.type === "midiOut") {

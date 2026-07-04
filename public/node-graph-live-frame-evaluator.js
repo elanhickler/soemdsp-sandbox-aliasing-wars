@@ -2961,6 +2961,17 @@ function evaluateNodeGraphPlanFrame(runtime, sampleRate, frame, frames) {
         blend: read("blend", 0.5),
         level: read("level", 1),
       });
+    } else if (node?.type === "tubeOscillator") {
+      const state = runtime.tubeOscillatorStates.get(nodeId) || createNodeGraphTubeOscillatorState();
+      runtime.tubeOscillatorStates.set(nodeId, state);
+      const read = (key, fallback) => readNodeGraphLiveEffectiveParam(runtime, node, key, fallback, frame, frames, frameValues);
+      value = nodeGraphTubeOscillatorSample(state, {
+        frequencyHz: Math.max(0, read("frequency", 220)),
+        sampleRate,
+        waveform: read("waveform", 0),
+        morph: read("morph", 0.5),
+        level: read("level", 1),
+      });
     } else if (node?.type === "midiOut") {
       const midiInputKey = `${nodeId}.MIDI Number`;
       const hasMidiInput = runtime.inputConnections.has(midiInputKey);

@@ -290,6 +290,46 @@ tone, SquSaw hybrids that are neither saw nor square nor triangle at any
 single setting. None of that palette exists in a standard "pick a
 waveform, cross-fade to the next" oscillator.
 
+## 🔥🎛️ The Tube Oscillator: alias-*taming* instead of alias-*freeing* ⚡
+
+The DSF starter kit above is alias-free *by construction* — a closed
+form that literally cannot contain a harmonic above Nyquist. The Tube
+Oscillator is the next weapon in this fight, and it's the opposite
+philosophy: it doesn't compute a harmonic count at all. Instead it runs
+a plain sine or parabolic phase through a `tanh` saturation stage — the
+same soft-clip curve a vacuum tube, a transistor, or an analog
+waveshaper produces — and *throttles how hard that saturation bites as
+pitch rises*, so the extra harmonics saturation injects stay tame near
+Nyquist without ever being counted or capped.
+
+Faithful port of `DistortionOscillator.hpp`
+(`soemdsp/include/soemdsp/oscillator/DistortionOscillator.hpp`) and all
+ten of its waveshapes: **Analog Saw (Sine)**, **Analog Saw (Parabol)**,
+**Perfect Saw**, **Analog Square**, **Square**, **Tri**, **Bow Tri**,
+**Distorted Bow Tri**, **Walter Wave**, and **Parabol Sine**. Two knobs:
+**Frequency** and **Morph** (0–1, how hard the tanh stage saturates).
+
+The anti-aliasing mechanism is one line:
+
+```
+sineAmp = quarterNyquist / (log10(frequency) * frequency) * (π/2) * 0.8
+```
+
+`sineAmp` scales the saturation stage's input gain, and it's inversely
+proportional to frequency — so as pitch climbs, the oscillator
+automatically saturates less, generating fewer of the extra harmonics
+that would otherwise start folding around Nyquist. No harmonic count, no
+cap, no closed-form summation — just a self-limiting feedback between
+pitch and distortion depth. Verified numerically (Python, exact math)
+that every one of the ten waveshapes stays bounded in `[-1, 1]` from
+55 Hz through 4000 Hz with this in place, and confirmed again in
+`wasmtime` and live in the browser across 30 Hz–20 kHz with zero NaN.
+
+`acos` has no freestanding-WASM equivalent (needed for **Perfect Saw**
+and **Tri**), so the native build uses a standard fast polynomial
+approximation (~7e-5 max error, verified against exact `math.acos`
+before shipping) instead.
+
 ## License
 
 This repository is source-available for noncommercial use only. Commercial use

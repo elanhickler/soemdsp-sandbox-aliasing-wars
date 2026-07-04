@@ -255,6 +255,7 @@ function createNodeGraphLiveRuntime(plan) {
   const pitchQuantizerStates = new Map();
   const surgeOscillatorStates = new Map();
   const dsfOscillatorStates = new Map();
+  const tubeOscillatorStates = new Map();
   const lorenzAttractorStates = new Map();
   const moduleGroupRuntimes = new Map();
   const noiseGeneratorStates = new Map();
@@ -317,6 +318,9 @@ function createNodeGraphLiveRuntime(plan) {
     }
     if (node.type === "dsfOscillator") {
       dsfOscillatorStates.set(node.id, createNodeGraphDsfOscillatorState());
+    }
+    if (node.type === "tubeOscillator") {
+      tubeOscillatorStates.set(node.id, createNodeGraphTubeOscillatorState());
     }
     if (node.type === "passiveFilter") {
       passiveFilterStates.set(node.id, createNodeGraphPassiveFilterState());
@@ -445,6 +449,7 @@ function createNodeGraphLiveRuntime(plan) {
     pitchQuantizerStates,
     surgeOscillatorStates,
     dsfOscillatorStates,
+    tubeOscillatorStates,
     lorenzAttractorStates,
     meterCounter: 0,
     meterClipCount: 0,
@@ -595,6 +600,9 @@ function updateNodeGraphLiveRuntimePlan(runtime, plan) {
   if (!runtime.dsfOscillatorStates) {
     runtime.dsfOscillatorStates = new Map();
   }
+  if (!runtime.tubeOscillatorStates) {
+    runtime.tubeOscillatorStates = new Map();
+  }
   if (!runtime.clockStates) {
     runtime.clockStates = new Map();
   }
@@ -716,6 +724,9 @@ function updateNodeGraphLiveRuntimePlan(runtime, plan) {
     }
     if (node.type === "dsfOscillator" && !runtime.dsfOscillatorStates.has(node.id)) {
       runtime.dsfOscillatorStates.set(node.id, createNodeGraphDsfOscillatorState());
+    }
+    if (node.type === "tubeOscillator" && !runtime.tubeOscillatorStates.has(node.id)) {
+      runtime.tubeOscillatorStates.set(node.id, createNodeGraphTubeOscillatorState());
     }
     if (node.type === "passiveFilter" && !runtime.passiveFilterStates.has(node.id)) {
       runtime.passiveFilterStates.set(node.id, createNodeGraphPassiveFilterState());
@@ -918,6 +929,11 @@ function updateNodeGraphLiveRuntimePlan(runtime, plan) {
   for (const id of [...runtime.dsfOscillatorStates.keys()]) {
     if (!nodeIds.has(id)) {
       runtime.dsfOscillatorStates.delete(id);
+    }
+  }
+  for (const id of [...runtime.tubeOscillatorStates.keys()]) {
+    if (!nodeIds.has(id)) {
+      runtime.tubeOscillatorStates.delete(id);
     }
   }
   for (const id of [...runtime.passiveFilterStates.keys()]) {
