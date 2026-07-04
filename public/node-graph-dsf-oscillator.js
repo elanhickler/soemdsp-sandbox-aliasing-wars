@@ -56,9 +56,34 @@ function nodeGraphDsfWrap01(x) {
   return x - Math.floor(x);
 }
 
+// QuasiBandlimited saw/square, transcribed directly from
+// "QuasiBandlimited.cxx" (Walter H. Hackett, "Direct Quasi-Bandlimited
+// Oscillators (No-Integration)"): a genuinely different construction from
+// pureSawEng above -- evaluated directly per-sample, no leaky integrator.
+// Shapes a normalized Dirichlet kernel through a square root and restores
+// odd symmetry via sign(sin(x)). m is forced to the nearest odd integer
+// >= N+1 (matching the reference). Guarded at sin(x)==0 via the same
+// L'Hopital limit used elsewhere in this module.
+function nodeGraphDsfQuasiBandlimited(t, n, square) {
+  const x = t * Math.PI * 2;
+  let m = n + 1;
+  if (m % 2 === 0) m += 1;
+  const sinX = Math.sin(x);
+  let inner;
+  if (sinX > -1e-7 && sinX < 1e-7) {
+    inner = 0;
+  } else {
+    inner = 1 - Math.sin(x * m) / (sinX * m);
+  }
+  const val = Math.sqrt(clampNodeSliderValue(inner, 0, 4));
+  const sign = sinX < 0 ? -1 : 1;
+  if (square) return sign * val;
+  return sign * val * Math.cos(x);
+}
+
 // options: { frequencyHz, sampleRate, waveform (0=Sine,1=Saw,2=Square PWM,
-//            3=Trimorph,4=SquSaw), morph (Harmonics, 0-1),
-//            pulseWidth (0-1), blend (0-1), level }
+//            3=Trimorph,4=SquSaw,5=Quasi Saw,6=Quasi Square),
+//            morph (Harmonics, 0-1), pulseWidth (0-1), blend (0-1), level }
 function nodeGraphDsfOscillatorSample(state, options = {}) {
   const sampleRate = Number(options.sampleRate) > 1 ? Number(options.sampleRate) : 48000;
   const safeFrequency = Number(options.frequencyHz) > 1 ? Number(options.frequencyHz) : 1;
@@ -70,6 +95,19 @@ function nodeGraphDsfOscillatorSample(state, options = {}) {
   if (waveform === 0) {
     state.t = nodeGraphDsfWrap01(state.t + dt);
     sample = Math.sin(state.t * Math.PI * 2);
+  } else if (waveform === 5 || waveform === 6) {
+    const nyquist = sampleRate * 0.5;
+    const nMax = Math.max(1, Math.floor(nyquist / safeFrequency));
+    state.t = nodeGraphDsfWrap01(state.t + dt * 0.9999);
+    const m = clampNodeSliderValue(Number(options.morph) || 0, 0, 1);
+    const target = 1 + m * (nMax - 1);
+    const lowN = Math.max(1, Math.floor(target));
+    const highN = Math.min(lowN + 1, nMax);
+    const frac = target - lowN;
+    const square = waveform === 6;
+    const lowVal = nodeGraphDsfQuasiBandlimited(state.t, lowN, square);
+    const highVal = nodeGraphDsfQuasiBandlimited(state.t, highN, square);
+    sample = lowVal * (1 - frac) + highVal * frac;
   } else {
     const nyquist = sampleRate * 0.5;
     const nMax = Math.max(1, Math.floor(nyquist / safeFrequency));

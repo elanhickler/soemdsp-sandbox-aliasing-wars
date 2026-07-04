@@ -16878,6 +16878,9 @@ def require_readme_scheduler_contract() -> None:
         "quarterNyquist / (log10(frequency) * frequency)",
         "Perfect Saw",
         "Walter Wave",
+        "Bonus waveshapes: Quasi Saw / Quasi Square",
+        "QuasiBandlimited.cxx",
+        "Direct Quasi-Bandlimited Oscillators",
     ]:
         require(snippet in readme_text, f"README scheduler contract missing {snippet}")
     for snippet in [

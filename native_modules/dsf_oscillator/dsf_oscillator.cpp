@@ -127,6 +127,42 @@ double sinApprox(double value) {
   return x * result;
 }
 
+double cosApprox(double value) {
+  return sinApprox(value + kPi * 0.5);
+}
+
+// QuasiBandlimited saw/square, transcribed directly from
+// "QuasiBandlimited.cxx" (Walter H. Hackett, "Direct Quasi-Bandlimited
+// Oscillators (No-Integration)"): a genuinely different construction from
+// pureSawEng above -- evaluated directly per-sample, no leaky integrator
+// at all, and not summed from a phase-shifted copy either. It shapes a
+// normalized Dirichlet kernel through a square root and restores odd
+// symmetry via sign(sin(x)):
+//   bandlimited(t, N) = sign(sin(x)) * sqrt(1 - sin(x*m)/(m*sin(x)))
+//                        * [cos(x) for Saw, 1 for Square],  x = t*2*pi
+// m is forced to the nearest odd integer >= N+1 (matching the reference).
+// Guarded at sin(x) == 0 (t = 0, 0.5, 1...) via the same L'Hopital limit
+// used elsewhere in this file: sin(m*x)/sin(x) -> m there, so the
+// bracketed term -> 0. Verified numerically (Python) that this produces
+// a clean sawtooth/square shape (not just bounded noise) and stays
+// bounded to ~1.1 peak across the harmonic range this module uses.
+double quasiBandlimited(double t, int n, bool square) {
+  const double x = t * kPi * 2.0;
+  int m = n + 1;
+  if (m % 2 == 0) m += 1;
+  const double sinX = sinApprox(x);
+  double inner;
+  if (sinX > -1.0e-7 && sinX < 1.0e-7) {
+    inner = 0.0;
+  } else {
+    inner = 1.0 - sinApprox(x * static_cast<double>(m)) / (sinX * static_cast<double>(m));
+  }
+  const double val = __builtin_sqrt(clampD(inner, 0.0, 4.0));
+  const double sign = sinX < 0.0 ? -1.0 : 1.0;
+  if (square) return sign * val;
+  return sign * val * cosApprox(x);
+}
+
 // pureSawEng(t, n), transcribed and simplified directly from "Extended DSF
 // Oscillators.cxx": sin(PI*t*(2N+1)) / sin(PI*t) - 1. Guarded at the
 // removable singularity t=0 (denominator's zero) via its L'Hopital limit
@@ -226,7 +262,8 @@ extern "C" void soemdsp_dsf_oscillator_reset(int handle) {
   s.triPeak = 1.0;
 }
 
-// waveform: 0=Sine, 1=Saw, 2=Square (PWM), 3=Trimorph, 4=SquSaw
+// waveform: 0=Sine, 1=Saw, 2=Square (PWM), 3=Trimorph, 4=SquSaw,
+//           5=Quasi Saw, 6=Quasi Square
 // morph: 0..1 (Harmonics) -- 0 is an exact sine, 1 is the full
 // Nyquist-safe harmonic count.
 // pulseWidth: 0..1 -- Square/Trimorph's duty cycle (0.5 = symmetric).
@@ -252,6 +289,23 @@ extern "C" void soemdsp_dsf_oscillator_sample(
   if (waveform == 0) {
     s.t = wrap01(s.t + dt);
     sample = sinApprox(s.t * kPi * 2.0);
+  } else if (waveform == 5 || waveform == 6) {
+    // Quasi Saw / Quasi Square: a genuinely different construction from
+    // everything else in this module -- evaluated directly per-sample,
+    // no leaky integrator at all. See quasiBandlimited()'s comment.
+    const double nyquist = safeSampleRate * 0.5;
+    int nMax = static_cast<int>(nyquist / safeFrequency);
+    if (nMax < 1) nMax = 1;
+    s.t = wrap01(s.t + dt * 0.9999);
+    const double target = 1.0 + clampD(morph, 0.0, 1.0) * static_cast<double>(nMax - 1);
+    int lowN = static_cast<int>(target);
+    if (lowN < 1) lowN = 1;
+    int highN = lowN + 1 > nMax ? nMax : lowN + 1;
+    const double frac = target - static_cast<double>(lowN);
+    const bool square = waveform == 6;
+    const double lowVal = quasiBandlimited(s.t, lowN, square);
+    const double highVal = quasiBandlimited(s.t, highN, square);
+    sample = lowVal * (1.0 - frac) + highVal * frac;
   } else {
     const double nyquist = safeSampleRate * 0.5;
     int nMax = static_cast<int>(nyquist / safeFrequency);
@@ -320,5 +374,5 @@ extern "C" double soemdsp_dsf_oscillator_out(int handle) {
 }
 
 extern "C" int soemdsp_dsf_oscillator_version() {
-  return 10;
+  return 11;
 }

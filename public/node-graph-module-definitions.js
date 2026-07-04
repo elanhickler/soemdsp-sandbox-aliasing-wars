@@ -764,15 +764,15 @@ const nodeGraphModuleDefinitions = Object.freeze({
     outputs: ["Out"],
     parameters: [
       {
-        choices: ["Sine", "Saw", "Square (PWM)", "Trimorph", "SquSaw"],
+        choices: ["Sine", "Saw", "Square (PWM)", "Trimorph", "SquSaw", "Quasi Saw", "Quasi Square"],
         defaultValue: "1",
         displayChoices: true,
         divideChoicesVisibly: true,
         key: "waveform",
         label: "Waveform",
         linearSmoothing: false,
-        max: "4",
-        mid: "2",
+        max: "6",
+        mid: "3",
         min: "0",
         nonlinearSlider: false,
         step: "1",

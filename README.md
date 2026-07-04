@@ -290,6 +290,29 @@ tone, SquSaw hybrids that are neither saw nor square nor triangle at any
 single setting. None of that palette exists in a standard "pick a
 waveform, cross-fade to the next" oscillator.
 
+### Bonus waveshapes: Quasi Saw / Quasi Square
+
+Two more waveforms in the same module, built on a genuinely different
+construction from everything above: a direct transcription of
+`QuasiBandlimited.cxx`'s "Direct Quasi-Bandlimited Oscillators
+(No-Integration)" (Walter H. Hackett). Where every other waveform in this
+module runs `pureSawEng` through a leaky integrator, Quasi Saw/Square are
+evaluated **directly per-sample, with no integrator at all** — a
+normalized Dirichlet kernel shaped through a square root, with odd
+symmetry restored via `sign(sin(x))`:
+
+```
+quasi(t, N) = sign(sin(x)) · sqrt(1 − sin(x·m) / (m·sin(x)))  ·  [cos(x) for Saw, 1 for Square]
+x = t · 2π,  m = nearest odd integer ≥ N + 1
+```
+
+Same Harmonics knob, same Nyquist-derived harmonic ceiling as every other
+waveform here — just a different shaping formula underneath. Verified
+numerically (Python) that it produces a clean sawtooth/square ramp shape
+(not just bounded noise), stays bounded to ~1.1 peak across the harmonic
+range this module uses, and confirmed zero NaN across a full frequency ×
+Harmonics sweep in `wasmtime` and live in the browser.
+
 ## 🔥🎛️ The Tube Oscillator: alias-*taming* instead of alias-*freeing* ⚡
 
 The DSF starter kit above is alias-free *by construction* — a closed
