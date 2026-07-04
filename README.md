@@ -405,6 +405,34 @@ Verified numerically (Python) that every shape stays within a sane,
 bounded `x`/`y` range (not wildly diverging) across a range of `A`/`B`
 values before shipping, and confirmed live in the browser.
 
+**Corrected after shipping:** Ring Sphere's denominator-based perspective
+divide was wrong — the real formula multiplies by a `sin(...)·0.3 + 0.7`
+scale term (the same style Dotted Cube's dimensional variant uses), not
+divide by a `sin(...)·0.7 + 2` denominator. Fixed to match the corrected
+formula. Also removed an extraneous `cos(t/4)/2` term from Dotted Cube
+(Dimensional)'s `y` that had crept in and wasn't part of the actual
+reference formula.
+
+### Walter's Saw: a seventh DSF waveshape
+
+Added directly from Walter H. Hackett, sent with the explicit
+instruction "please combine with leaky integrator":
+
+```
+pureWaltersSaw(t, m):
+  x = t·2π,  n = ⌊(m−1)/2⌋
+  return −2·(−cos(x(n+1))·(cos(x)cos(x(n+1)) + sin(x(n+1))sin(x) − sin(x(n+1))) / sin(x) + cos(x)/sin(x))
+```
+
+Run through the exact same accumulator every DSF oscillator in this
+mission uses — `Harmonics`-morphed, fed through the frequency-adaptive
+leaky integrator, guarded at its own removable singularity
+(`sin(x) = 0`). Verified numerically (Python) that the raw formula's
+amplitude scales with harmonic count the same way `pureSawEng`'s does,
+and that the full accumulator pipeline produces a bounded, near-zero-DC
+sawtooth-family shape from 55 Hz through 10 kHz, confirmed with zero NaN
+across a full frequency × Harmonics sweep.
+
 ## License
 
 This repository is source-available for noncommercial use only. Commercial use

@@ -24,7 +24,7 @@
 // story.
 
 function createNodeGraphDsfOscillatorState() {
-  return { t: 0, sawAcc: 0, sqAcc: 0, blendSqAcc: 0, triAcc: 0, triPeak: 1 };
+  return { t: 0, sawAcc: 0, sqAcc: 0, blendSqAcc: 0, triAcc: 0, triPeak: 1, waltersAcc: 0 };
 }
 
 // ~20 periods of memory, decayed to ~1%.
@@ -81,8 +81,33 @@ function nodeGraphDsfQuasiBandlimited(t, n, square) {
   return sign * val * Math.cos(x);
 }
 
+// Walter's Saw, transcribed directly from Walter H. Hackett's own
+// "optimized" pureWaltersSaw, sent with the explicit instruction "please
+// combine with leaky integrator" -- the same accumulator pattern
+// everything else in this module already uses. Guarded at the removable
+// singularity sin(x)==0.
+function nodeGraphDsfPureWaltersSaw(t, m) {
+  const x = t * Math.PI * 2;
+  const sinx = Math.sin(x);
+  if (sinx > -1e-7 && sinx < 1e-7) return 0;
+  const n = Math.floor((m - 1) * 0.5);
+  const cosx = Math.cos(x);
+  const cxn1 = Math.cos(x * (n + 1));
+  const sxn1 = Math.sin(x * (n + 1));
+  return -2 * (-cxn1 * (cosx * cxn1 + sxn1 * sinx - sxn1) / sinx + cosx / sinx);
+}
+
+function nodeGraphDsfPureWaltersSawMorphed(t, nMax, morph) {
+  const m = clampNodeSliderValue(Number(morph) || 0, 0, 1);
+  const target = 1 + m * (nMax - 1);
+  const lowN = Math.max(1, Math.floor(target));
+  const highN = Math.min(lowN + 1, nMax);
+  const frac = target - lowN;
+  return nodeGraphDsfPureWaltersSaw(t, lowN) * (1 - frac) + nodeGraphDsfPureWaltersSaw(t, highN) * frac;
+}
+
 // options: { frequencyHz, sampleRate, waveform (0=Sine,1=Saw,2=Square PWM,
-//            3=Trimorph,4=SquSaw,5=Quasi Saw,6=Quasi Square),
+//            3=Trimorph,4=SquSaw,5=Quasi Saw,6=Quasi Square,7=Walter's Saw),
 //            morph (Harmonics, 0-1), pulseWidth (0-1), blend (0-1), level }
 function nodeGraphDsfOscillatorSample(state, options = {}) {
   const sampleRate = Number(options.sampleRate) > 1 ? Number(options.sampleRate) : 48000;
@@ -95,6 +120,14 @@ function nodeGraphDsfOscillatorSample(state, options = {}) {
   if (waveform === 0) {
     state.t = nodeGraphDsfWrap01(state.t + dt);
     sample = Math.sin(state.t * Math.PI * 2);
+  } else if (waveform === 7) {
+    const nyquist = sampleRate * 0.5;
+    const nMax = Math.max(1, Math.floor(nyquist / safeFrequency));
+    state.t = nodeGraphDsfWrap01(state.t + dt * 0.9999);
+    const retention = nodeGraphDsfAdaptiveRetention(dt);
+    const raw = nodeGraphDsfPureWaltersSawMorphed(state.t, nMax, options.morph);
+    state.waltersAcc = state.waltersAcc * retention + raw * dt;
+    sample = state.waltersAcc;
   } else if (waveform === 5 || waveform === 6) {
     const nyquist = sampleRate * 0.5;
     const nMax = Math.max(1, Math.floor(nyquist / safeFrequency));

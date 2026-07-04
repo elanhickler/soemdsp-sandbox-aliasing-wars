@@ -45,14 +45,15 @@ function hackettShapesSample(options = {}) {
       break;
     }
     case 1: {
-      // Ring Sphere
+      // Ring Sphere -- corrected: multiply by the perspective-scale term
+      // (like Dotted Cube's dimensional variant), not divide by it.
       const fb = Math.floor(b + 1);
       const idx = Math.floor((((a * t) % 1 + 1) % 1) * fb) / fb;
       const circ = Math.sqrt(Math.max(0, 1 - (idx * 2 - 1) ** 2));
       const ang = ((((a * t * fb) % 1) + 1) % 1) * Math.PI * 2;
-      const denom = (Math.sin(ang) * circ) * 0.7 + 2;
-      x = (Math.cos(ang) * circ) / denom;
-      y = (idx * 2 - 1 + Math.cos(t / 2) / 2) / denom;
+      const scale = (Math.sin(ang) * circ) * 0.3 + 0.7;
+      x = (Math.cos(ang) * circ) * scale;
+      y = (idx * 2 - 1 + Math.cos(t / 2) / 2) * scale;
       break;
     }
     case 2: {
@@ -86,7 +87,7 @@ function hackettShapesSample(options = {}) {
       const xa2 = Math.floor((((t * a) * 5) % 1 - 0.4) * 5) / 5;
       const scale = (Math.sin(t * b) * xa2 + Math.cos(t * b) * xb) * 0.3 + 0.7;
       x = (Math.cos(t * b) * xa - Math.sin(t * b) * xb) * scale;
-      y = (Math.cos(t / 4) / 2 + Math.floor(((t * a) % 1 - 0.4) * 5) / 5) * scale;
+      y = (Math.floor(((t * a) % 1 - 0.4) * 5) / 5) * scale;
       break;
     }
   }

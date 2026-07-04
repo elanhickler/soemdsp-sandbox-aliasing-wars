@@ -5818,14 +5818,15 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         break;
       }
       case 1: {
-        // Ring Sphere
+        // Ring Sphere -- corrected: multiply by the perspective-scale
+        // term (like Dotted Cube's dimensional variant), not divide.
         const fb = Math.floor(b + 1);
         const idx = Math.floor((((a * t) % 1 + 1) % 1) * fb) / fb;
         const circ = Math.sqrt(Math.max(0, 1 - (idx * 2 - 1) ** 2));
         const ang = ((((a * t * fb) % 1) + 1) % 1) * Math.PI * 2;
-        const denom = (Math.sin(ang) * circ) * 0.7 + 2;
-        x = (Math.cos(ang) * circ) / denom;
-        y = (idx * 2 - 1 + Math.cos(t / 2) / 2) / denom;
+        const scale = (Math.sin(ang) * circ) * 0.3 + 0.7;
+        x = (Math.cos(ang) * circ) * scale;
+        y = (idx * 2 - 1 + Math.cos(t / 2) / 2) * scale;
         break;
       }
       case 2: {
@@ -5859,7 +5860,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         const xa2 = Math.floor((((t * a) * 5) % 1 - 0.4) * 5) / 5;
         const scale = (Math.sin(t * b) * xa2 + Math.cos(t * b) * xb) * 0.3 + 0.7;
         x = (Math.cos(t * b) * xa - Math.sin(t * b) * xb) * scale;
-        y = (Math.cos(t / 4) / 2 + Math.floor(((t * a) % 1 - 0.4) * 5) / 5) * scale;
+        y = (Math.floor(((t * a) % 1 - 0.4) * 5) / 5) * scale;
         break;
       }
     }
@@ -6518,7 +6519,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
   }
 
   createDsfOscillatorState() {
-    return { t: 0, sawAcc: 0, sqAcc: 0, blendSqAcc: 0, triAcc: 0, triPeak: 1, nativeHandle: 0 };
+    return { t: 0, sawAcc: 0, sqAcc: 0, blendSqAcc: 0, triAcc: 0, triPeak: 1, waltersAcc: 0, nativeHandle: 0 };
   }
 
   destroyDsfOscillatorNativeState(state) {
@@ -6579,8 +6580,33 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     return sign * val * Math.cos(x);
   }
 
+  // Walter's Saw, transcribed directly from Walter H. Hackett's own
+  // "optimized" pureWaltersSaw, sent with the explicit instruction "please
+  // combine with leaky integrator" -- the same accumulator pattern
+  // everything else in this module already uses. Guarded at the
+  // removable singularity sin(x)==0.
+  dsfPureWaltersSaw(t, m) {
+    const x = t * Math.PI * 2;
+    const sinx = Math.sin(x);
+    if (sinx > -1e-7 && sinx < 1e-7) return 0;
+    const n = Math.floor((m - 1) * 0.5);
+    const cosx = Math.cos(x);
+    const cxn1 = Math.cos(x * (n + 1));
+    const sxn1 = Math.sin(x * (n + 1));
+    return -2 * (-cxn1 * (cosx * cxn1 + sxn1 * sinx - sxn1) / sinx + cosx / sinx);
+  }
+
+  dsfPureWaltersSawMorphed(t, nMax, morph) {
+    const m = this.clampValue(Number(morph) || 0, 0, 1);
+    const target = 1 + m * (nMax - 1);
+    const lowN = Math.max(1, Math.floor(target));
+    const highN = Math.min(lowN + 1, nMax);
+    const frac = target - lowN;
+    return this.dsfPureWaltersSaw(t, lowN) * (1 - frac) + this.dsfPureWaltersSaw(t, highN) * frac;
+  }
+
   // waveform: 0=Sine, 1=Saw, 2=Square (PWM), 3=Trimorph, 4=SquSaw,
-  //           5=Quasi Saw, 6=Quasi Square.
+  //           5=Quasi Saw, 6=Quasi Square, 7=Walter's Saw.
   // Square: saw(t) - saw(t - pulseWidth) -- alias-free since it's a
   // subtraction of phase-shifted copies of an already-verified Saw.
   // Trimorph: a second leaky integration on the (bounded) Square output,
@@ -6597,6 +6623,14 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     if (waveform === 0) {
       state.t = this.wrapValue(state.t + dt, 0, 1);
       sample = Math.sin(state.t * Math.PI * 2);
+    } else if (waveform === 7) {
+      const nyquist = sampleRate * 0.5;
+      const nMax = Math.max(1, Math.floor(nyquist / safeFrequency));
+      state.t = this.wrapValue(state.t + dt * 0.9999, 0, 1);
+      const retention = this.dsfAdaptiveRetention(dt);
+      const raw = this.dsfPureWaltersSawMorphed(state.t, nMax, options.morph);
+      state.waltersAcc = state.waltersAcc * retention + raw * dt;
+      sample = state.waltersAcc;
     } else if (waveform === 5 || waveform === 6) {
       const nyquist = sampleRate * 0.5;
       const nMax = Math.max(1, Math.floor(nyquist / safeFrequency));

@@ -16887,6 +16887,9 @@ def require_readme_scheduler_contract() -> None:
         "Ring Sphere",
         "Electric Grid Cube",
         "Dotted Cube (Dimensional)",
+        "Corrected after shipping",
+        "Walter's Saw: a seventh DSF waveshape",
+        "pureWaltersSaw",
     ]:
         require(snippet in readme_text, f"README scheduler contract missing {snippet}")
     for snippet in [

@@ -215,6 +215,42 @@ double pureSawEngMorphed(double t, int nMax, double harmonics) {
   return pureSawEng(t, lowN) * (1.0 - frac) + pureSawEng(t, highN) * frac;
 }
 
+// Walter's Saw, transcribed directly from Walter H. Hackett's own
+// "optimized" pureWaltersSaw, sent with the explicit instruction "please
+// combine with leaky integrator" -- the same accumulator pattern
+// everything else in this module already uses:
+//   double pureWaltersSaw(double t, int m) {
+//       double x = t * tau;
+//       double n = floor((m-1) * 0.5);
+//       return -2.0*(-cos(x*(n+1))*(cos(x)*cos(x*(n+1))+sin(x*(n+1))*sin(x)-sin(x*(n+1)))/sin(x)+cos(x)/sin(x));
+//   }
+// Guarded at the removable singularity sin(x)==0 (x = 0, pi, 2pi...) --
+// verified numerically (Python) that the raw formula's amplitude scales
+// with the harmonic count (same as pureSawEng), and that running it
+// through the same adaptive-retention leaky integrator produces a
+// bounded, near-zero-DC sawtooth-family shape across 55 Hz-10 kHz before
+// shipping.
+double pureWaltersSaw(double t, int m) {
+  const double x = t * kPi * 2.0;
+  const double sinx = sinApprox(x);
+  if (sinx > -1.0e-7 && sinx < 1.0e-7) return 0.0;
+  const double n = __builtin_floor(static_cast<double>(m - 1) * 0.5);
+  const double cosx = cosApprox(x);
+  const double cxn1 = cosApprox(x * (n + 1.0));
+  const double sxn1 = sinApprox(x * (n + 1.0));
+  return -2.0 * (-cxn1 * (cosx * cxn1 + sxn1 * sinApprox(x) - sxn1) / sinx + cosx / sinx);
+}
+
+double pureWaltersSawMorphed(double t, int nMax, double harmonics) {
+  const double m = clampD(harmonics, 0.0, 1.0);
+  const double target = 1.0 + m * static_cast<double>(nMax - 1);
+  int lowN = static_cast<int>(target);
+  if (lowN < 1) lowN = 1;
+  int highN = lowN + 1 > nMax ? nMax : lowN + 1;
+  const double frac = target - static_cast<double>(lowN);
+  return pureWaltersSaw(t, lowN) * (1.0 - frac) + pureWaltersSaw(t, highN) * frac;
+}
+
 constexpr int kMaxInstances = 16;
 
 struct DsfOscillatorState {
@@ -227,6 +263,7 @@ struct DsfOscillatorState {
                         // sample() comment).
   double triAcc;       // Trimorph's second-stage leaky-integrator accumulator
   double triPeak;      // Trimorph's adaptive peak-follower
+  double waltersAcc;   // Walter's Saw leaky-integrator accumulator
   double out;
 };
 
@@ -260,10 +297,11 @@ extern "C" void soemdsp_dsf_oscillator_reset(int handle) {
   s.blendSqAcc = 0.0;
   s.triAcc = 0.0;
   s.triPeak = 1.0;
+  s.waltersAcc = 0.0;
 }
 
 // waveform: 0=Sine, 1=Saw, 2=Square (PWM), 3=Trimorph, 4=SquSaw,
-//           5=Quasi Saw, 6=Quasi Square
+//           5=Quasi Saw, 6=Quasi Square, 7=Walter's Saw
 // morph: 0..1 (Harmonics) -- 0 is an exact sine, 1 is the full
 // Nyquist-safe harmonic count.
 // pulseWidth: 0..1 -- Square/Trimorph's duty cycle (0.5 = symmetric).
@@ -306,6 +344,18 @@ extern "C" void soemdsp_dsf_oscillator_sample(
     const double lowVal = quasiBandlimited(s.t, lowN, square);
     const double highVal = quasiBandlimited(s.t, highN, square);
     sample = lowVal * (1.0 - frac) + highVal * frac;
+  } else if (waveform == 7) {
+    // Walter's Saw: sent directly by Walter H. Hackett with the
+    // instruction "combine with leaky integrator" -- same accumulator
+    // pattern as Saw above, just a different closed form.
+    const double nyquist = safeSampleRate * 0.5;
+    int nMax = static_cast<int>(nyquist / safeFrequency);
+    if (nMax < 1) nMax = 1;
+    s.t = wrap01(s.t + dt * 0.9999);
+    const double retention = adaptiveRetention(dt);
+    const double raw = pureWaltersSawMorphed(s.t, nMax, morph);
+    s.waltersAcc = s.waltersAcc * retention + raw * dt;
+    sample = s.waltersAcc;
   } else {
     const double nyquist = safeSampleRate * 0.5;
     int nMax = static_cast<int>(nyquist / safeFrequency);
@@ -374,5 +424,5 @@ extern "C" double soemdsp_dsf_oscillator_out(int handle) {
 }
 
 extern "C" int soemdsp_dsf_oscillator_version() {
-  return 11;
+  return 12;
 }
