@@ -2810,6 +2810,20 @@ function evaluateNodeGraphPlanFrame(runtime, sampleRate, frame, frames) {
         Y: spiral.y * level,
         Z: spiral.z * level,
       };
+    } else if (node?.type === "hackettShapes") {
+      const state = runtime.hackettShapesStates.get(nodeId) || createHackettShapesState();
+      runtime.hackettShapesStates.set(nodeId, state);
+      const read = (key, fallback) => readNodeGraphLiveEffectiveParam(runtime, node, key, fallback, frame, frames, frameValues);
+      const shape = hackettShapesSample({
+        state,
+        speed: read("speed", 1),
+        sampleRate,
+        shape: read("shape", 0),
+        a: read("a", 1),
+        b: read("b", 3),
+        level: read("level", 1),
+      });
+      value = { X: shape.x, Y: shape.y };
     } else if (node?.type === "lorenzAttractor") {
       const state = runtime.lorenzAttractorStates.get(nodeId) || createNodeGraphLorenzAttractorState();
       runtime.lorenzAttractorStates.set(nodeId, state);

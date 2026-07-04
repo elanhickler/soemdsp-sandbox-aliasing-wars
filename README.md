@@ -246,11 +246,19 @@ sweep is smooth rather than stepped. It currently displays as a raw
   knob), landing on a saw-to-triangle-like character rather than a
   saw-to-square one. One knob, `blend` (0–1): 0 is pure Saw, 1 is pure
   50%-duty Square.
-- **Quasi Saw / Quasi Square** — the one exception to "everything above
-  is a variation on the same accumulator." A different closed form
-  entirely (see the [Bonus waveshapes](#bonus-waveshapes-quasi-saw--quasi-square)
-  section below), evaluated directly per-sample with no integrator at
-  all. Same Harmonics knob, same Nyquist ceiling, different math.
+- **Quasi Saw / Quasi Square** — still DSF at its foundation, just used
+  differently. Its core term, `sin(N·x) / sin(x)`, is the exact same
+  Dirichlet-kernel discrete-summation identity `pureSawEng` is built
+  from (verified: `sin(N·x)/sin(x) = 1 + 2·Σcos(2k·x)`, a genuine finite
+  equal-weighted harmonic sum, for `N` odd). The difference is what
+  happens to that sum afterward — `pureSawEng` uses it linearly, as the
+  waveform itself; Quasi Saw/Square reshape it through a square root and
+  restore sign via `sign(sin(x))` instead, and evaluate the whole thing
+  directly per-sample with no leaky integrator. That nonlinear reshaping
+  is exactly why it doesn't collapse to a sine at `Harmonics = 0` the
+  way the linear-sum waveforms do — same DSF substrate, different
+  surface. See [Bonus waveshapes](#bonus-waveshapes-quasi-saw--quasi-square)
+  below for the full formula.
 
 ### 🎯🪖 Getting the four classic waveshapes
 
@@ -270,8 +278,9 @@ Every `pureSawEng`-family waveform in this module — Saw, Square, Trimorph,
 SquSaw — collapses to an **exact sine** at `Harmonics = 0`, not an
 approximation, not a "close enough" sine, the literal same
 single-harmonic closed form regardless of which waveform you started
-from. (Quasi Saw/Square are the one exception: a different closed form
-entirely, so their `Harmonics = 0` case is its own single-cycle shape,
+from. (Quasi Saw/Square are built on the same underlying Dirichlet-kernel
+DSF identity, but reshape it through a square root instead of using it
+linearly, so their `Harmonics = 0` case is its own single-cycle shape,
 not a sine — see the Bonus waveshapes section.) For the `pureSawEng`
 family, this is a direct, audible consequence of the architecture: every
 one of those waveforms shares the same underlying `pureSawEng` harmonic
@@ -301,13 +310,14 @@ waveform, cross-fade to the next" oscillator.
 
 ### Bonus waveshapes: Quasi Saw / Quasi Square
 
-Two more waveforms in the same module, built on a genuinely different
-construction from everything above: a direct transcription of
-`QuasiBandlimited.cxx`'s "Direct Quasi-Bandlimited Oscillators
-(No-Integration)" (Walter H. Hackett). Where every other waveform in this
-module runs `pureSawEng` through a leaky integrator, Quasi Saw/Square are
-evaluated **directly per-sample, with no integrator at all** — a
-normalized Dirichlet kernel shaped through a square root, with odd
+Two more waveforms in the same module, still DSF at the core but used
+differently: a direct transcription of `QuasiBandlimited.cxx`'s "Direct
+Quasi-Bandlimited Oscillators (No-Integration)" (Walter H. Hackett).
+Where every other waveform in this module runs `pureSawEng` through a
+leaky integrator, Quasi Saw/Square are evaluated **directly per-sample,
+with no integrator at all** — the same Dirichlet-kernel discrete-
+summation identity, shaped through a square root instead of used
+linearly, with odd
 symmetry restored via `sign(sin(x))`:
 
 ```
@@ -361,6 +371,39 @@ that every one of the ten waveshapes stays bounded in `[-1, 1]` from
 and **Tri**), so the native build uses a standard fast polynomial
 approximation (~7e-5 max error, verified against exact `math.acos`
 before shipping) instead.
+
+## 📺⚡ Hackett Shapes: X-Y oscilloscope art, not audio
+
+A change of pace from the oscillator work above — five X-Y shapes
+transcribed directly from Walter H. Hackett's PlugNScript formulas:
+**Spiral Sphere**, **Ring Sphere**, **Electric Grid Cube**, **Dotted
+Cube**, and **Dotted Cube (Dimensional)**.
+
+These are **2D, not 3D** — each shape is a plain `(x, y)` parametric
+curve, two numbers per sample, nothing more. What makes them read as
+rotating 3D wireframes when plotted on an oscilloscope/vectorscope (the
+same X/Y display technique this repo's `spiral` and `lorenzAttractor`
+modules already use) is a fake-perspective-divide trick baked into every
+formula's denominator:
+
+```
+denom = (sin(...) * shape_term) * 0.7 + 2
+x = ... / denom
+y = ... / denom
+```
+
+Points that would be "further away" in the illusion get divided by a
+larger denominator and shrink — the same trick a real 3D-to-2D
+perspective projection uses, just faked with a sine term instead of an
+actual depth coordinate. `A` and `B` are the two shape-control knobs
+from the reference patches (density/warp parameters); `Speed` drives a
+free-running time value `t` — there's no "one cycle" concept for these
+shapes the way there is for an audio oscillator, so `t` just increases
+continuously.
+
+Verified numerically (Python) that every shape stays within a sane,
+bounded `x`/`y` range (not wildly diverging) across a range of `A`/`B`
+values before shipping, and confirmed live in the browser.
 
 ## License
 

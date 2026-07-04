@@ -206,6 +206,7 @@ PUBLIC_SCRIPT_PATHS = (
     "./public/node-graph-surge-oscillator.js",
     "./public/node-graph-dsf-oscillator.js",
     "./public/node-graph-tube-oscillator.js",
+    "./public/node-graph-hackett-shapes.js",
     "./public/node-graph-live-frame-evaluator.js",
     "./public/node-graph-live-runtime.js",
     "./public/node-graph-wire-controller-bootstrap.js",
@@ -16881,6 +16882,11 @@ def require_readme_scheduler_contract() -> None:
         "Bonus waveshapes: Quasi Saw / Quasi Square",
         "QuasiBandlimited.cxx",
         "Direct Quasi-Bandlimited Oscillators",
+        "Hackett Shapes: X-Y oscilloscope art, not audio",
+        "Spiral Sphere",
+        "Ring Sphere",
+        "Electric Grid Cube",
+        "Dotted Cube (Dimensional)",
     ]:
         require(snippet in readme_text, f"README scheduler contract missing {snippet}")
     for snippet in [

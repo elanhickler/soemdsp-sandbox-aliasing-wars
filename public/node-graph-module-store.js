@@ -31,6 +31,7 @@ const nodeGraphModuleStoreTypes = Object.freeze([
   "tubeOscillator",
   "arpeggiator",
   "spiral",
+  "hackettShapes",
   "blubb",
   "boing",
   "keplerBoukamp",
@@ -432,6 +433,12 @@ const nodeGraphModuleStoreCatalog = Object.freeze({
     description: "Jerobeam spiral engine. Emits X/Y/Z motion-signal for alien curves and audiovisual flight paths.",
     label: "Jerobeam Spiral",
     notes: ["attractor motion", "rotation", "density and morph controls"],
+  },
+  hackettShapes: {
+    category: "Jerobeam",
+    description: "Five X-Y oscilloscope shapes transcribed directly from Walter H. Hackett's PlugNScript formulas: Spiral Sphere, Ring Sphere, Electric Grid Cube, Dotted Cube, and Dotted Cube (Dimensional). Each is a plain 2D (x, y) parametric curve, not real 3D geometry -- but a fake-perspective-divide trick in every formula's denominator shrinks points that would be 'further away' in the illusion, which is what makes a 2D X/Y plot read as a rotating 3D wireframe on an oscilloscope/vectorscope display. A and B are the two shape-control knobs from the reference patches.",
+    label: "Hackett Shapes",
+    notes: ["x/y art", "oscilloscope", "vectorscope", "walter hackett"],
   },
   blubb: {
     category: "Jerobeam",
