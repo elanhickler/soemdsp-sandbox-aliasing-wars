@@ -68,6 +68,58 @@ hard-sync sweep with two knobs and zero patch cables. Patch something into
 `Sync` and it takes over completely; the internal oscillator is a
 convenience default, not an extra mandatory step.
 
+### 🩹🌀 PolyBLEP under modulation: the edge-consistent `dt` fix
+
+**A tip came in from an outside conversation** proposing an "edge-aware"
+rewrite of the PolyBLEP wrap correction, framed as fixing modulation
+artifacts by tracking the exact sub-sample fraction where phase crosses 1.0.
+Worked through it by hand before touching any code: algebraically, that
+"edge-aware" `t` reduces to exactly `wrap(p0 + increment)` — just the *next*
+sample's phase, computed one sample early. Numerically confirmed it too: its
+output at sample `k` is byte-identical to this module's own output at sample
+`k+1`. Not a wrap-time correction — a one-sample look-ahead wearing edge-
+fraction math that cancels out. Rejected.
+
+**But it pointed at something real.** `polyBlep(phaseCycle, phaseIncrement)`
+samples `phaseCycle` using the phase *before* this sample's own advance —
+so on the sample immediately after a wrap, that `phaseCycle` was actually
+produced by the *previous* sample's increment, not the current one. Under a
+fast frequency sweep (heavy FM, a hard pitch jump) those two increments
+differ, and the naive code divides by the wrong one right at the edge.
+
+**Proven with a constructed case**, not just argued: an increment jumping
+from `0.05` to `0.30` exactly on the sample where phase wraps.
+
+| sample | dt (this sample) | dt (previous sample) | naive output | fixed output |
+|---|---|---|---|---|
+| just after the wrap | 0.30 | 0.05 | **-1.12** ⚠️ | -0.76 |
+
+The naive correction overshoots *outside the sawtooth's own [-1, 1] range* —
+an audible glitch, not just a rounding error. **The fix:** `polyBlep` and
+`polyBlepSquare` now take a third argument, `previousIncrement` — the
+increment that was active on the previous sample — and use it (instead of
+the current sample's increment) specifically for the "just passed an edge"
+branch, since that's the increment that actually produced the phase value
+being corrected. The "about to cross an edge" branch is untouched — it
+already uses the current sample's own increment correctly, since that's the
+increment that determines *this* sample's distance to the upcoming edge.
+
+**Regression-checked, not just improved:** when the increment is constant
+(no modulation), the fix is provably identical to the old formula (`dtPrev
+== dt` collapses the new branch back to the original one exactly — verified
+with 2000 random constant-`dt` cases, max diff `0.0`). It only changes
+output during the exact window where the old code was already wrong: a
+changing increment straddling a wrap.
+
+Applies to every waveform built on `polyBlep`/`polyBlepSquare` — Saw, Ramp,
+Square, Tri — in `native_modules/polyblep`, its JS fallback in
+`node-live-audio-worklet.js`, and the offline mirror in
+`node-graph-oscillator-runtime.js`. `surge_oscillator.cpp` reuses the same
+two functions but advances its phase accumulator *before* sampling (so its
+`phaseCycle` is always self-consistent with its own current increment) —
+its call sites intentionally pass the same value for both `phaseIncrement`
+and `previousIncrement`, unchanged.
+
 ## 🎛️⚡🔬 Alias-free oscillator study: the DSF technique 🧲
 
 Studied `C:\Users\argit\Documents\_PROGRAMMING\soemdsp\include\soemdsp\oscillator\DSFOscillator.hpp`

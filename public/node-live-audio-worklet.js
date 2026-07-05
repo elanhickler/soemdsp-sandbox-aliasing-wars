@@ -2731,10 +2731,20 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     return `${nodeId}${channel ? `:${channel}` : ""}:seed:${seed}`;
   }
 
-  polyBlep(phaseCycle, phaseIncrement) {
+  // phaseCycle (t) is this sample's phase *before* this sample's own advance --
+  // so when t is just past 0 (the "we just crossed the wrap" branch), t was
+  // actually produced by the *previous* sample's increment, not this one.
+  // Under a fast frequency sweep those two increments differ, and dividing by
+  // the wrong one (the naive approach) throws the correction polynomial off
+  // by however much the increment changed right at the edge -- verified this
+  // produces an out-of-range overshoot right after a modulated wrap. Using
+  // previousIncrement for that branch keeps the correction consistent with
+  // the increment that actually produced t.
+  polyBlep(phaseCycle, phaseIncrement, previousIncrement) {
     const dt = this.clampValue(Math.abs(Number(phaseIncrement) || 0), 1e-6, 0.5);
-    if (phaseCycle < dt) {
-      const t = phaseCycle / dt;
+    const dtPrev = this.clampValue(Math.abs(Number(previousIncrement) || 0), 1e-6, 0.5);
+    if (phaseCycle < dtPrev) {
+      const t = phaseCycle / dtPrev;
       return t + t - t * t - 1;
     }
     if (phaseCycle > 1 - dt) {
@@ -2744,10 +2754,10 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     return 0;
   }
 
-  polyBlepSquare(phaseCycle, phaseIncrement) {
+  polyBlepSquare(phaseCycle, phaseIncrement, previousIncrement) {
     let value = phaseCycle < 0.5 ? 1 : -1;
-    value += this.polyBlep(phaseCycle, phaseIncrement);
-    value -= this.polyBlep(this.wrapValue(phaseCycle + 0.5, 0, 1), phaseIncrement);
+    value += this.polyBlep(phaseCycle, phaseIncrement, previousIncrement);
+    value -= this.polyBlep(this.wrapValue(phaseCycle + 0.5, 0, 1), phaseIncrement, previousIncrement);
     return value;
   }
 
@@ -2757,17 +2767,18 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     if (phaseStopped && this.oscillatorStoppedSamples.has(nodeId)) {
       return this.oscillatorStoppedSamples.get(nodeId) || 0;
     }
+    const previousPhaseIncrement = Number(this.oscillatorLastPhaseIncrements.get(nodeId)) || 0;
     const renderPhaseIncrement = phaseStopped
-      ? Number(this.oscillatorLastPhaseIncrements.get(nodeId)) || 0
+      ? previousPhaseIncrement
       : phaseDelta;
     const phaseCycle = this.wrapValue(phase / (Math.PI * 2), 0, 1);
     let sample = 0;
     switch (Math.round(Number(waveform) || 0)) {
       case 1:
-        sample = -1 + phaseCycle * 2 - this.polyBlep(phaseCycle, renderPhaseIncrement);
+        sample = -1 + phaseCycle * 2 - this.polyBlep(phaseCycle, renderPhaseIncrement, previousPhaseIncrement);
         break;
       case 2:
-        sample = this.polyBlepSquare(phaseCycle, renderPhaseIncrement);
+        sample = this.polyBlepSquare(phaseCycle, renderPhaseIncrement, previousPhaseIncrement);
         break;
       case 3:
         {
@@ -2776,7 +2787,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
             sample = triangle;
             break;
           }
-          const nextTriangle = (triangle + this.polyBlepSquare(phaseCycle, renderPhaseIncrement) * phaseDelta * 4) * 0.995;
+          const nextTriangle = (triangle + this.polyBlepSquare(phaseCycle, renderPhaseIncrement, previousPhaseIncrement) * phaseDelta * 4) * 0.995;
           this.triangleStates.set(nodeId, this.clampValue(nextTriangle, -1, 1));
           sample = this.clampValue(nextTriangle, -1, 1);
           break;
@@ -2789,7 +2800,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
         break;
       case 0:
       default:
-        sample = 1 - phaseCycle * 2 + this.polyBlep(phaseCycle, renderPhaseIncrement);
+        sample = 1 - phaseCycle * 2 + this.polyBlep(phaseCycle, renderPhaseIncrement, previousPhaseIncrement);
         break;
     }
     if (phaseStopped) {
@@ -6404,13 +6415,18 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // Note: state.phase is advanced *before* this is called (phaseCycle is
+  // already post-advance), so phaseCycle here is always produced by the same
+  // phaseIncrement passed as the correction's dt -- no cross-sample increment
+  // mismatch to correct for, unlike the main polyBlep oscillator. Both
+  // polyBlep(Square) arguments below are intentionally the same value.
   surgeOscillatorWaveformSampleJs(state, phaseCycle, phaseIncrement, waveform) {
     switch (waveform) {
       case 1:
-        return this.polyBlepSquare(phaseCycle, phaseIncrement);
+        return this.polyBlepSquare(phaseCycle, phaseIncrement, phaseIncrement);
       case 2: {
         const next = this.clampValue(
-          (state.triangleIntegrator + this.polyBlepSquare(phaseCycle, phaseIncrement) * phaseIncrement * 4) * 0.995,
+          (state.triangleIntegrator + this.polyBlepSquare(phaseCycle, phaseIncrement, phaseIncrement) * phaseIncrement * 4) * 0.995,
           -1,
           1,
         );
@@ -6420,7 +6436,7 @@ class NodeLiveAudioProcessor extends AudioWorkletProcessor {
       case 3:
         return Math.sin(phaseCycle * Math.PI * 2);
       default:
-        return -1 + phaseCycle * 2 - this.polyBlep(phaseCycle, phaseIncrement);
+        return -1 + phaseCycle * 2 - this.polyBlep(phaseCycle, phaseIncrement, phaseIncrement);
     }
   }
 

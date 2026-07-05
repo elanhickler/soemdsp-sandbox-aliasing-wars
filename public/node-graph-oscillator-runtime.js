@@ -100,10 +100,20 @@ function nodeGraphNoiseSampleHoldSample(runtime, state, nodeId, seedValue, speed
   return state.held;
 }
 
-function nodeGraphPolyBlep(phaseCycle, phaseIncrement) {
+// phaseCycle (t) is this sample's phase *before* this sample's own advance --
+// so when t is just past 0 (the "we just crossed the wrap" branch), t was
+// actually produced by the *previous* sample's increment, not this one.
+// Under a fast frequency sweep those two increments differ, and dividing by
+// the wrong one (the naive approach) throws the correction polynomial off
+// by however much the increment changed right at the edge -- verified this
+// produces an out-of-range overshoot right after a modulated wrap. Using
+// previousIncrement for that branch keeps the correction consistent with
+// the increment that actually produced t.
+function nodeGraphPolyBlep(phaseCycle, phaseIncrement, previousIncrement) {
   const dt = clampNodeSliderValue(Math.abs(Number(phaseIncrement) || 0), 1e-6, 0.5);
-  if (phaseCycle < dt) {
-    const t = phaseCycle / dt;
+  const dtPrev = clampNodeSliderValue(Math.abs(Number(previousIncrement) || 0), 1e-6, 0.5);
+  if (phaseCycle < dtPrev) {
+    const t = phaseCycle / dtPrev;
     return t + t - t * t - 1;
   }
   if (phaseCycle > 1 - dt) {
@@ -113,10 +123,10 @@ function nodeGraphPolyBlep(phaseCycle, phaseIncrement) {
   return 0;
 }
 
-function nodeGraphPolyBlepSquare(phaseCycle, phaseIncrement) {
+function nodeGraphPolyBlepSquare(phaseCycle, phaseIncrement, previousIncrement) {
   let value = phaseCycle < 0.5 ? 1 : -1;
-  value += nodeGraphPolyBlep(phaseCycle, phaseIncrement);
-  value -= nodeGraphPolyBlep(wrapNodeSliderValue(phaseCycle + 0.5, 0, 1), phaseIncrement);
+  value += nodeGraphPolyBlep(phaseCycle, phaseIncrement, previousIncrement);
+  value -= nodeGraphPolyBlep(wrapNodeSliderValue(phaseCycle + 0.5, 0, 1), phaseIncrement, previousIncrement);
   return value;
 }
 
@@ -128,17 +138,18 @@ function nodeGraphOscillatorWaveformSample(runtime, nodeId, phase, phaseIncremen
   if (phaseStopped && runtime.oscillatorStoppedSamples.has(nodeId)) {
     return runtime.oscillatorStoppedSamples.get(nodeId) || 0;
   }
+  const previousPhaseIncrement = Number(runtime.oscillatorLastPhaseIncrements.get(nodeId)) || 0;
   const renderPhaseIncrement = phaseStopped
-    ? Number(runtime.oscillatorLastPhaseIncrements.get(nodeId)) || 0
+    ? previousPhaseIncrement
     : phaseDelta;
   const phaseCycle = wrapNodeSliderValue(phase / (Math.PI * 2), 0, 1);
   let sample = 0;
   switch (Math.round(Number(waveform) || 0)) {
     case 1:
-      sample = -1 + phaseCycle * 2 - nodeGraphPolyBlep(phaseCycle, renderPhaseIncrement);
+      sample = -1 + phaseCycle * 2 - nodeGraphPolyBlep(phaseCycle, renderPhaseIncrement, previousPhaseIncrement);
       break;
     case 2:
-      sample = nodeGraphPolyBlepSquare(phaseCycle, renderPhaseIncrement);
+      sample = nodeGraphPolyBlepSquare(phaseCycle, renderPhaseIncrement, previousPhaseIncrement);
       break;
     case 3:
       {
@@ -147,7 +158,7 @@ function nodeGraphOscillatorWaveformSample(runtime, nodeId, phase, phaseIncremen
           sample = triangle;
           break;
         }
-        const nextTriangle = (triangle + nodeGraphPolyBlepSquare(phaseCycle, renderPhaseIncrement) * phaseDelta * 4) * 0.995;
+        const nextTriangle = (triangle + nodeGraphPolyBlepSquare(phaseCycle, renderPhaseIncrement, previousPhaseIncrement) * phaseDelta * 4) * 0.995;
         runtime.triangleStates?.set(nodeId, clampNodeSliderValue(nextTriangle, -1, 1));
         sample = clampNodeSliderValue(nextTriangle, -1, 1);
         break;
@@ -160,7 +171,7 @@ function nodeGraphOscillatorWaveformSample(runtime, nodeId, phase, phaseIncremen
       break;
     case 0:
     default:
-      sample = 1 - phaseCycle * 2 + nodeGraphPolyBlep(phaseCycle, renderPhaseIncrement);
+      sample = 1 - phaseCycle * 2 + nodeGraphPolyBlep(phaseCycle, renderPhaseIncrement, previousPhaseIncrement);
       break;
   }
   if (phaseStopped) {

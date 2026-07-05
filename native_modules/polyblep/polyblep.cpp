@@ -60,10 +60,20 @@ double sinApprox(double value) {
   return x * (1.0 + x2 * (-1.0 / 6.0 + x2 * (1.0 / 120.0 + x2 * (-1.0 / 5040.0 + x2 * (1.0 / 362880.0)))));
 }
 
-double polyBlep(double phaseCycle, double phaseIncrement) {
+// phaseCycle (t) is this sample's phase *before* this sample's own advance --
+// so when t is just past 0 (the "we just crossed the wrap" branch), t was
+// actually produced by the *previous* sample's increment, not this one. Under
+// a fast frequency sweep those two increments differ, and dividing by the
+// wrong one (the naive approach) throws the correction polynomial off by
+// however much the increment changed right at the edge -- verified this
+// produces an out-of-range overshoot right after a modulated wrap. Using
+// previousIncrement for that branch keeps the correction consistent with the
+// increment that actually produced t.
+double polyBlep(double phaseCycle, double phaseIncrement, double previousIncrement) {
   const double dt = clampD(phaseIncrement < 0.0 ? -phaseIncrement : phaseIncrement, 1.0e-6, 0.5);
-  if (phaseCycle < dt) {
-    const double t = phaseCycle / dt;
+  const double dtPrev = clampD(previousIncrement < 0.0 ? -previousIncrement : previousIncrement, 1.0e-6, 0.5);
+  if (phaseCycle < dtPrev) {
+    const double t = phaseCycle / dtPrev;
     return t + t - t * t - 1.0;
   }
   if (phaseCycle > 1.0 - dt) {
@@ -73,10 +83,10 @@ double polyBlep(double phaseCycle, double phaseIncrement) {
   return 0.0;
 }
 
-double polyBlepSquare(double phaseCycle, double phaseIncrement) {
+double polyBlepSquare(double phaseCycle, double phaseIncrement, double previousIncrement) {
   double value = phaseCycle < 0.5 ? 1.0 : -1.0;
-  value += polyBlep(phaseCycle, phaseIncrement);
-  value -= polyBlep(wrap01(phaseCycle + 0.5), phaseIncrement);
+  value += polyBlep(phaseCycle, phaseIncrement, previousIncrement);
+  value -= polyBlep(wrap01(phaseCycle + 0.5), phaseIncrement, previousIncrement);
   return value;
 }
 
@@ -94,22 +104,23 @@ double oscillatorSample(SlotState& slot, double phase, double phaseIncrement, in
   if (phaseStopped && slot.hasStoppedSample) {
     return slot.stoppedSample;
   }
+  const double previousIncrement = slot.lastPhaseIncrement;
   const double renderIncrement = phaseStopped ? slot.lastPhaseIncrement : phaseDelta;
   const double phaseCycle = wrap01(phase / kTwoPi);
   double sample = 0.0;
   switch (waveform) {
     case 1:
-      sample = -1.0 + phaseCycle * 2.0 - polyBlep(phaseCycle, renderIncrement);
+      sample = -1.0 + phaseCycle * 2.0 - polyBlep(phaseCycle, renderIncrement, previousIncrement);
       break;
     case 2:
-      sample = polyBlepSquare(phaseCycle, renderIncrement);
+      sample = polyBlepSquare(phaseCycle, renderIncrement, previousIncrement);
       break;
     case 3: {
       if (phaseStopped) {
         sample = slot.triangleIntegrator;
         break;
       }
-      double nextTriangle = (slot.triangleIntegrator + polyBlepSquare(phaseCycle, renderIncrement) * phaseDelta * 4.0) * 0.995;
+      double nextTriangle = (slot.triangleIntegrator + polyBlepSquare(phaseCycle, renderIncrement, previousIncrement) * phaseDelta * 4.0) * 0.995;
       nextTriangle = clampD(nextTriangle, -1.0, 1.0);
       slot.triangleIntegrator = nextTriangle;
       sample = nextTriangle;
@@ -133,7 +144,7 @@ double oscillatorSample(SlotState& slot, double phase, double phaseIncrement, in
       break;
     }
     default:
-      sample = 1.0 - phaseCycle * 2.0 + polyBlep(phaseCycle, renderIncrement);
+      sample = 1.0 - phaseCycle * 2.0 + polyBlep(phaseCycle, renderIncrement, previousIncrement);
       break;
   }
   if (phaseStopped) {

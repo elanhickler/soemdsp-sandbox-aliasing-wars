@@ -18,13 +18,20 @@ function createNodeGraphSurgeOscillatorState() {
   };
 }
 
+// Note: this oscillator advances state.phase *before* sampling (phaseCycle
+// passed below is already the post-advance phase), unlike the built-in
+// polyBlep oscillators which sample using the pre-advance phase. That means
+// phaseCycle here is always produced by the same `increment` passed as the
+// correction's dt -- there's no cross-sample increment mismatch to correct
+// for, so both nodeGraphPolyBlep(Square) arguments below are intentionally
+// the same value.
 function nodeGraphSurgeOscillatorWaveformSample(state, phaseCycle, phaseIncrement, waveform) {
   switch (waveform) {
     case 1:
-      return nodeGraphPolyBlepSquare(phaseCycle, phaseIncrement);
+      return nodeGraphPolyBlepSquare(phaseCycle, phaseIncrement, phaseIncrement);
     case 2: {
       const next = clampNodeSliderValue(
-        (state.triangleIntegrator + nodeGraphPolyBlepSquare(phaseCycle, phaseIncrement) * phaseIncrement * 4) * 0.995,
+        (state.triangleIntegrator + nodeGraphPolyBlepSquare(phaseCycle, phaseIncrement, phaseIncrement) * phaseIncrement * 4) * 0.995,
         -1,
         1,
       );
@@ -34,7 +41,7 @@ function nodeGraphSurgeOscillatorWaveformSample(state, phaseCycle, phaseIncremen
     case 3:
       return Math.sin(phaseCycle * Math.PI * 2);
     default:
-      return -1 + phaseCycle * 2 - nodeGraphPolyBlep(phaseCycle, phaseIncrement);
+      return -1 + phaseCycle * 2 - nodeGraphPolyBlep(phaseCycle, phaseIncrement, phaseIncrement);
   }
 }
 
